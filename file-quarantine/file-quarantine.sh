@@ -43,6 +43,10 @@ RETENTION_DAYS=30
 # This prevents quarantining actively used files
 MIN_FILE_AGE_MINUTES=60
 
+# Log file truncation settings
+TRUNCATE_LOGS=false                         # Set to true to enable log file truncation
+TRUNCATE_SIZE="5MB"                         # Size limit for log files (e.g., "5MB", "1GB", "100KB")
+
 # Exclude patterns (directories or files to skip)
 # Uses find's -path pattern matching
 EXCLUDE_PATTERNS=(
@@ -130,6 +134,38 @@ human_readable_size() {
     fi
 }
 
+# Convert size string to bytes
+size_to_bytes() {
+    local size_str="$1"
+    local num=$(echo "$size_str" | sed 's/[^0-9.]*//g')
+    local unit=$(echo "$size_str" | sed 's/[0-9.]*//g' | tr '[:lower:]' '[:upper:]')
+
+    if [ -z "$num" ]; then
+        echo 0
+        return 1
+    fi
+
+    case "$unit" in
+        B)
+            echo "${num%.*}"
+            ;;
+        KB|K)
+            echo "$(awk "BEGIN {printf \"%.0f\", $num * 1024}")"
+            ;;
+        MB|M)
+            echo "$(awk "BEGIN {printf \"%.0f\", $num * 1048576}")"
+            ;;
+        GB|G)
+            echo "$(awk "BEGIN {printf \"%.0f\", $num * 1073741824}")"
+            ;;
+        *)
+            log_error "Invalid size unit: $unit. Use B, KB, MB, or GB."
+            echo 0
+            return 1
+            ;;
+    esac
+}
+
 # Build find command with exclusions
 build_find_command() {
     local scan_dir="$1"
@@ -159,6 +195,32 @@ build_find_command() {
     find_cmd+=" \\)"
 
     echo "$find_cmd"
+}
+
+# Truncate a log file
+truncate_log_file() {
+    local file_path="$1"
+    local file_size=$(stat -c%s "$file_path" 2>/dev/null || echo 0)
+    local truncate_bytes=$(size_to_bytes "$TRUNCATE_SIZE")
+
+    # Check if file is larger than the truncate size
+    if [ "$file_size" -le "$truncate_bytes" ]; then
+        return 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY-RUN] Would truncate: $file_path ($(human_readable_size $file_size) -> $(human_readable_size $truncate_bytes))"
+        return 0
+    fi
+
+    # Truncate the file
+    if truncate -s "$truncate_bytes" "$file_path" 2>/dev/null; then
+        log_success "Truncated: $file_path (was $(human_readable_size $file_size))"
+        return 0
+    else
+        log_error "Failed to truncate: $file_path"
+        return 1
+    fi
 }
 
 # Quarantine a file
@@ -478,19 +540,44 @@ send_email_local() {
 
     # Try to use mail command first
     if command -v mail &> /dev/null; then
-        (
-            echo "To: $EMAIL_TO"
-            echo "From: $EMAIL_FROM"
-            echo "Subject: $EMAIL_SUBJECT"
-            echo "Content-Type: text/html; charset=UTF-8"
-            echo "MIME-Version: 1.0"
-            echo ""
-            cat "$html_file"
-        ) | mail -t
+        # Detect if this is GNU mail or BSD mail
+        local mail_type
+        if mail --version &> /dev/null 2>&1; then
+            mail_type="gnu"
+        else
+            mail_type="bsd"
+        fi
 
-        if [ $? -eq 0 ]; then
-            log_success "Email sent successfully via local mail"
-            return 0
+        if [ "$mail_type" = "gnu" ]; then
+            # GNU mail supports -t flag to read headers from message
+            (
+                echo "To: $EMAIL_TO"
+                echo "From: $EMAIL_FROM"
+                echo "Subject: $EMAIL_SUBJECT"
+                echo "Content-Type: text/html; charset=UTF-8"
+                echo "MIME-Version: 1.0"
+                echo ""
+                cat "$html_file"
+            ) | mail -t
+
+            if [ $? -eq 0 ]; then
+                log_success "Email sent successfully via GNU mail"
+                return 0
+            fi
+        else
+            # BSD mail requires -s for subject and extracts To from command line
+            (
+                echo "From: $EMAIL_FROM"
+                echo "Content-Type: text/html; charset=UTF-8"
+                echo "MIME-Version: 1.0"
+                echo ""
+                cat "$html_file"
+            ) | mail -s "$EMAIL_SUBJECT" "$EMAIL_TO"
+
+            if [ $? -eq 0 ]; then
+                log_success "Email sent successfully via BSD mail"
+                return 0
+            fi
         fi
     fi
 
@@ -570,12 +657,16 @@ usage() {
 Usage: $SCRIPT_NAME [OPTIONS]
 
 File Quarantine Script - Recursively scans directories for specified file
-extensions, quarantines them, and deletes old quarantined files.
+extensions, quarantines them, and deletes old quarantined files. Optionally
+truncates .log files to a specified size limit.
 
 OPTIONS:
-    --dry-run       Simulate the quarantine process without actually moving
-                    or deleting any files
-    -h, --help      Display this help message
+    --dry-run               Simulate the quarantine process without actually moving
+                            or deleting any files
+    --truncate-logs         Enable truncation of .log files in scan directories
+    --truncate-size SIZE    Set the truncate size for log files (default: 5MB)
+                            Examples: 1MB, 100KB, 1GB, 500B
+    -h, --help              Display this help message
 
 CONFIGURATION:
     Edit the configuration section at the top of this script to customize:
@@ -583,6 +674,7 @@ CONFIGURATION:
     - Quarantine root directory
     - File extensions to monitor
     - Retention period for quarantined files
+    - Log truncation settings (TRUNCATE_LOGS, TRUNCATE_SIZE)
     - Email notification settings
     - Exclude patterns
 
@@ -593,8 +685,14 @@ EXAMPLES:
     # Test what would happen without making changes
     $SCRIPT_NAME --dry-run
 
-    # Add to crontab to run daily at 2 AM
-    0 2 * * * /path/to/$SCRIPT_NAME
+    # Truncate all .log files to 10MB
+    $SCRIPT_NAME --truncate-logs --truncate-size 10MB
+
+    # Run with both quarantine and log truncation
+    $SCRIPT_NAME --truncate-logs --truncate-size 5MB
+
+    # Add to crontab to run daily at 2 AM with log truncation
+    0 2 * * * /path/to/$SCRIPT_NAME --truncate-logs --truncate-size 5MB
 
 EOF
 }
@@ -610,6 +708,19 @@ main() {
             --dry-run)
                 DRY_RUN=true
                 shift
+                ;;
+            --truncate-logs)
+                TRUNCATE_LOGS=true
+                shift
+                ;;
+            --truncate-size)
+                if [ -z "$2" ]; then
+                    log_error "--truncate-size requires an argument (e.g., 5MB)"
+                    usage
+                    exit 1
+                fi
+                TRUNCATE_SIZE="$2"
+                shift 2
                 ;;
             -h|--help)
                 usage
@@ -629,6 +740,9 @@ main() {
     echo "  Run Date: $RUN_DATE"
     if [ "$DRY_RUN" = true ]; then
         echo "  Mode: DRY-RUN (simulation only)"
+    fi
+    if [ "$TRUNCATE_LOGS" = true ]; then
+        echo "  Log Truncation: ENABLED (size limit: $TRUNCATE_SIZE)"
     fi
     echo "======================================================================="
     echo ""
@@ -698,7 +812,30 @@ main() {
     log_info "Cleanup phase complete: $COUNT_DELETED files deleted ($(human_readable_size $TOTAL_SIZE_DELETED))"
     echo ""
 
-    # Phase 3: Send email report
+    # Phase 3: Truncate log files (if enabled)
+    if [ "$TRUNCATE_LOGS" = true ]; then
+        log_info "Starting log file truncation..."
+        echo ""
+
+        for scan_dir in "${SCAN_DIRS[@]}"; do
+            if [ ! -d "$scan_dir" ]; then
+                continue
+            fi
+
+            log_info "Truncating logs in: $scan_dir"
+
+            # Find and truncate .log files
+            while IFS= read -r -d '' file; do
+                truncate_log_file "$file"
+            done < <(find "$scan_dir" -type f -iname "*.log" -print0 2>/dev/null)
+        done
+
+        echo ""
+        log_info "Log truncation phase complete"
+        echo ""
+    fi
+
+    # Phase 4: Send email report
     send_email
 
     # Final summary
