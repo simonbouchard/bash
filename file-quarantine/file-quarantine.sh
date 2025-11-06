@@ -13,66 +13,56 @@
 ################################################################################
 
 # ============================================================================
-# CONFIGURATION SECTION
+# CONFIGURATION LOADING
 # ============================================================================
 
-# Directory to scan (can be an array for multiple directories)
-SCAN_DIRS=(
-    "/home/www"
-    # "/path/to/scan"
-    # Add more directories as needed
-)
-
-# Root quarantine directory (files will preserve structure under this)
-QUARANTINE_ROOT="/path/to/quarantine"
-
-# File extensions to quarantine (without the dot)
-FILE_EXTENSIONS=(
-    "sql"
-    "bak"
-    "log"
-    "tmp"
-    "old"
-    "zip"
-    # Add more extensions as needed
-)
-
-# Days to keep quarantined files before deletion
+# Default configuration values
+SCAN_DIRS_STR="/path/to/scan"
+QUARANTINE_ROOT="/var/quarantine"
+FILE_EXTENSIONS_STR="sql:bak:log:tmp:old"
 RETENTION_DAYS=30
-
-# Minimum file age (in minutes) before quarantine
-# This prevents quarantining actively used files
 MIN_FILE_AGE_MINUTES=60
-
-# Log file truncation settings
-TRUNCATE_LOGS=false                         # Set to true to enable log file truncation
-TRUNCATE_SIZE="5MB"                         # Size limit for log files (e.g., "5MB", "1GB", "100KB")
-
-# Exclude patterns (directories or files to skip)
-# Uses find's -path pattern matching
-EXCLUDE_PATTERNS=(
-    "*/proc/*"
-    "*/sys/*"
-    "*/dev/*"
-    "*/tmp/*"
-    "*/.git/*"
-    "*/node_modules/*"
-    "*/wp-content/*"
-    # Add more patterns as needed
-)
-
-# Email Configuration
-ENABLE_EMAIL=false                          # Set to true to enable email notifications
-EMAIL_TO="admin@example.com"                # Recipient email address
-EMAIL_FROM="quarantine@$(hostname)"         # Sender email address
+TRUNCATE_LOGS=false
+TRUNCATE_SIZE="5MB"
+EXCLUDE_PATTERNS_STR="*/proc/*:*/sys/*:*/dev/*:*/tmp/*:*/.git/*:*/node_modules/*"
+ENABLE_EMAIL=false
+EMAIL_TO="admin@example.com"
+EMAIL_FROM="quarantine@$(hostname)"
 EMAIL_SUBJECT="File Quarantine Report - $(date +%Y-%m-%d)"
+SMTP_SERVER=""
+SMTP_USER=""
+SMTP_PASS=""
+SMTP_USE_TLS="true"
 
-# SMTP Configuration (if using external SMTP instead of local mail)
-# Leave empty to use local mail/sendmail
-SMTP_SERVER=""                              # e.g., "smtp.gmail.com:587"
-SMTP_USER=""                                # SMTP username
-SMTP_PASS=""                                # SMTP password
-SMTP_USE_TLS="true"                         # true/false
+# Load configuration from .env file if it exists
+load_config() {
+    local script_dir=$(cd "$(dirname "$0")" && pwd)
+    local env_file="${script_dir}/.env"
+
+    if [ -f "$env_file" ]; then
+        # Source the .env file, filtering out comments and empty lines
+        while IFS='=' read -r key value; do
+            # Skip empty lines and comments
+            [[ -z "$key" || "$key" =~ ^# ]] && continue
+            # Remove leading/trailing whitespace
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            # Expand environment variables in value
+            value=$(eval echo "$value")
+            # Set the variable
+            export "$key=$value"
+        done < "$env_file"
+    else
+        log_error "Configuration file not found: $env_file"
+        log_error "Please create a .env file. See .env.example for reference."
+        exit 1
+    fi
+
+    # Convert colon-separated strings to arrays
+    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS_STR"
+    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS_STR"
+    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS_STR"
+}
 
 # ============================================================================
 # SCRIPT INTERNALS (DO NOT MODIFY BELOW UNLESS YOU KNOW WHAT YOU'RE DOING)
@@ -704,6 +694,9 @@ EOF
 # ============================================================================
 
 main() {
+    # Load configuration from .env file
+    load_config
+
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
