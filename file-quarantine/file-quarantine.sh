@@ -47,8 +47,10 @@ DRY_RUN=false
 # Counters
 COUNT_QUARANTINED=0
 COUNT_DELETED=0
+COUNT_TRUNCATED=0
 TOTAL_SIZE_QUARANTINED=0
 TOTAL_SIZE_DELETED=0
+TOTAL_SIZE_FREED=0
 
 # Arrays to store file information for email report
 declare -a QUARANTINED_FILES
@@ -175,14 +177,20 @@ truncate_log_file() {
         return 0
     fi
 
+    local space_freed=$((file_size - truncate_bytes))
+
     if [ "$DRY_RUN" = true ]; then
-        log_info "[DRY-RUN] Would truncate: $file_path ($(human_readable_size $file_size) -> $(human_readable_size $truncate_bytes))"
+        log_info "[DRY-RUN] Would truncate: $file_path ($(human_readable_size $file_size) -> $(human_readable_size $truncate_bytes), freeing $(human_readable_size $space_freed))"
+        COUNT_TRUNCATED=$((COUNT_TRUNCATED + 1))
+        TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + space_freed))
         return 0
     fi
 
     # Truncate the file
     if truncate -s "$truncate_bytes" "$file_path" 2>/dev/null; then
-        log_success "Truncated: $file_path (was $(human_readable_size $file_size))"
+        log_success "Truncated: $file_path (was $(human_readable_size $file_size), freed $(human_readable_size $space_freed))"
+        COUNT_TRUNCATED=$((COUNT_TRUNCATED + 1))
+        TOTAL_SIZE_FREED=$((TOTAL_SIZE_FREED + space_freed))
         return 0
     else
         log_error "Failed to truncate: $file_path"
@@ -870,6 +878,9 @@ main() {
     echo "======================================================================="
     echo "  Files Quarantined: $COUNT_QUARANTINED ($(human_readable_size $TOTAL_SIZE_QUARANTINED))"
     echo "  Files Deleted:     $COUNT_DELETED ($(human_readable_size $TOTAL_SIZE_DELETED))"
+    if [ "$TRUNCATE_LOGS" = true ]; then
+        echo "  Files Truncated:   $COUNT_TRUNCATED (Space freed: $(human_readable_size $TOTAL_SIZE_FREED))"
+    fi
     if [ "$DRY_RUN" = true ]; then
         echo ""
         echo "  *** DRY-RUN MODE - No files were actually modified ***"
