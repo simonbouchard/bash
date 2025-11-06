@@ -772,11 +772,11 @@ main() {
     echo "======================================================================="
     echo "  File Quarantine Script"
     echo "  Run Date: $RUN_DATE"
-    if [ "$DRY_RUN" = true ]; then
-        echo "  Mode: DRY-RUN (simulation only)"
-    fi
     if [ "$TRUNCATE_LOGS" = true ]; then
         echo "  Log Truncation: ENABLED (size limit: $TRUNCATE_SIZE)"
+    fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "  Mode: DRY-RUN (simulation only)"
     fi
     echo "======================================================================="
     echo ""
