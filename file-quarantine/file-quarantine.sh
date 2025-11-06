@@ -781,7 +781,30 @@ main() {
         log_success "Created quarantine root: $QUARANTINE_ROOT"
     fi
 
-    # Phase 1: Scan and quarantine files
+    # Phase 1: Truncate log files (if enabled)
+    if [ "$TRUNCATE_LOGS" = true ]; then
+        log_info "Starting log file truncation..."
+        echo ""
+
+        for scan_dir in "${SCAN_DIRS[@]}"; do
+            if [ ! -d "$scan_dir" ]; then
+                continue
+            fi
+
+            log_info "Truncating logs in: $scan_dir"
+
+            # Find and truncate .log files
+            while IFS= read -r -d '' file; do
+                truncate_log_file "$file"
+            done < <(find "$scan_dir" -type f -iname "*.log" -print0 2>/dev/null)
+        done
+
+        echo ""
+        log_info "Log truncation phase complete"
+        echo ""
+    fi
+
+    # Phase 2: Scan and quarantine files
     log_info "Starting file scan and quarantine process..."
     echo ""
 
@@ -804,7 +827,7 @@ main() {
     log_info "Quarantine phase complete: $COUNT_QUARANTINED files quarantined ($(human_readable_size $TOTAL_SIZE_QUARANTINED))"
     echo ""
 
-    # Phase 2: Clean up old quarantined files
+    # Phase 3: Clean up old quarantined files
     log_info "Starting cleanup of old quarantined files..."
     echo ""
 
@@ -813,29 +836,6 @@ main() {
     echo ""
     log_info "Cleanup phase complete: $COUNT_DELETED files deleted ($(human_readable_size $TOTAL_SIZE_DELETED))"
     echo ""
-
-    # Phase 3: Truncate log files (if enabled)
-    if [ "$TRUNCATE_LOGS" = true ]; then
-        log_info "Starting log file truncation..."
-        echo ""
-
-        for scan_dir in "${SCAN_DIRS[@]}"; do
-            if [ ! -d "$scan_dir" ]; then
-                continue
-            fi
-
-            log_info "Truncating logs in: $scan_dir"
-
-            # Find and truncate .log files
-            while IFS= read -r -d '' file; do
-                truncate_log_file "$file"
-            done < <(find "$scan_dir" -type f -iname "*.log" -print0 2>/dev/null)
-        done
-
-        echo ""
-        log_info "Log truncation phase complete"
-        echo ""
-    fi
 
     # Phase 4: Send email report
     send_email
