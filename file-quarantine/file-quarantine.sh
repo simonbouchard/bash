@@ -664,47 +664,38 @@ load_config() {
     local script_dir=$(cd "$(dirname "$0")" && pwd)
     local env_file="${script_dir}/.env"
 
-    if [ -f "$env_file" ]; then
-        # Source the .env file, filtering out comments and empty lines
-        while IFS= read -r line; do
-            # Skip empty lines and comments
-            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-
-            # Remove inline comments (but preserve # inside quotes)
-            line="${line%%[[:space:]]*#[^'\"]*}"
-
-            # Split on first = only
-            if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
-                key="${BASH_REMATCH[1]}"
-                value="${BASH_REMATCH[2]}"
-
-                # Remove leading/trailing whitespace from key and value
-                key=$(echo "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-                value=$(echo "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-
-                # Remove quotes if present
-                value="${value%\"}"
-                value="${value#\"}"
-                value="${value%\'}"
-                value="${value#\'}"
-
-                # Expand environment variables in value
-                value=$(eval echo "$value")
-
-                # Set the variable
-                eval "$key=\"$value\""
-            fi
-        done < "$env_file"
-
-        # Convert colon-separated strings to arrays
-        IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
-        IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
-        IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
-    else
+    if [ ! -f "$env_file" ]; then
         log_error "Configuration file not found: $env_file"
         log_error "Please create a .env file. See .env.example for reference."
         exit 1
     fi
+
+    # Source the .env file, filtering out comments and empty lines
+    while IFS='=' read -r key value; do
+        # Skip empty lines and lines starting with #
+        if [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        # Remove leading/trailing whitespace
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+
+        # Remove quotes if present
+        value="${value%\"}"
+        value="${value#\"}"
+
+        # Skip if value is empty after processing
+        [[ -z "$value" ]] && continue
+
+        # Use declare to set variable dynamically
+        declare -g "$key=$value"
+    done < "$env_file"
+
+    # Convert colon-separated strings to arrays
+    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
+    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
+    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
 }
 
 # ============================================================================
