@@ -140,6 +140,11 @@ build_find_command() {
         fi
     done
 
+    # Exclude .log files from quarantine if TRUNCATE_LOGS is enabled
+    if [ "$TRUNCATE_LOGS" = true ]; then
+        find_cmd+=" ! -iname \"*.log\""
+    fi
+
     # Add file age filter (files older than MIN_FILE_AGE_MINUTES)
     find_cmd+=" -mmin +${MIN_FILE_AGE_MINUTES}"
 
