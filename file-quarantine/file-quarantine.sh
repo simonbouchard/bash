@@ -695,16 +695,16 @@ load_config() {
                 eval "$key=\"$value\""
             fi
         done < "$env_file"
+
+        # Convert colon-separated strings to arrays
+        IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
+        IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
+        IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
     else
         log_error "Configuration file not found: $env_file"
         log_error "Please create a .env file. See .env.example for reference."
         exit 1
     fi
-
-    # Convert colon-separated strings to arrays
-    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
-    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
-    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
 }
 
 # ============================================================================
