@@ -1,0 +1,12 @@
+# Environment configuration
+.env
+
+# Local development files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.log
