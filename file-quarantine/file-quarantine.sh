@@ -527,19 +527,33 @@ send_email_local() {
                 return 0
             fi
         else
-            # BSD mail requires -s for subject and extracts To from command line
-            (
+            # BSD mail with MIME headers - create temporary file with proper headers
+            local temp_email="/tmp/quarantine_email_${RUN_DATE}.txt"
+            {
                 echo "From: $EMAIL_FROM"
+                echo "To: $EMAIL_TO"
+                echo "Subject: $EMAIL_SUBJECT"
                 echo "Content-Type: text/html; charset=UTF-8"
                 echo "MIME-Version: 1.0"
                 echo ""
                 cat "$html_file"
-            ) | mail -s "$EMAIL_SUBJECT" "$EMAIL_TO"
+            } > "$temp_email"
 
-            if [ $? -eq 0 ]; then
-                log_success "Email sent successfully via BSD mail"
+            # Use sendmail format with BSD mail
+            if sendmail -t < "$temp_email" 2>/dev/null; then
+                log_success "Email sent successfully via sendmail"
+                rm -f "$temp_email"
                 return 0
             fi
+
+            # Fallback to piping with mail command if sendmail fails
+            if mail -s "$EMAIL_SUBJECT" "$EMAIL_TO" < "$html_file" 2>/dev/null; then
+                log_success "Email sent successfully via BSD mail"
+                rm -f "$temp_email"
+                return 0
+            fi
+
+            rm -f "$temp_email"
         fi
     fi
 
@@ -687,6 +701,9 @@ load_config() {
 
         # Skip if value is empty after processing
         [[ -z "$value" ]] && continue
+
+        # Expand environment variables and command substitutions
+        value=$(eval echo "$value")
 
         # Use declare to set variable dynamically
         declare -g "$key=$value"
