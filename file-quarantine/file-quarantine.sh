@@ -18,8 +18,8 @@
 
 # Directory to scan (can be an array for multiple directories)
 SCAN_DIRS=(
-    "/path/to/scan/directory1"
-    # "/path/to/scan/directory2"
+    "/home/www"
+    # "/path/to/scan"
     # Add more directories as needed
 )
 
@@ -33,6 +33,7 @@ FILE_EXTENSIONS=(
     "log"
     "tmp"
     "old"
+    "zip"
     # Add more extensions as needed
 )
 
@@ -56,6 +57,7 @@ EXCLUDE_PATTERNS=(
     "*/tmp/*"
     "*/.git/*"
     "*/node_modules/*"
+    "*/wp-content/*"
     # Add more patterns as needed
 )
 
