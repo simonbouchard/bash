@@ -34,54 +34,6 @@ SMTP_USER=""
 SMTP_PASS=""
 SMTP_USE_TLS="true"
 
-# Load configuration from .env file if it exists
-load_config() {
-    local script_dir=$(cd "$(dirname "$0")" && pwd)
-    local env_file="${script_dir}/.env"
-
-    if [ -f "$env_file" ]; then
-        # Source the .env file, filtering out comments and empty lines
-        while IFS= read -r line; do
-            # Skip empty lines and comments
-            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-
-            # Remove inline comments (but preserve # inside quotes)
-            line="${line%%[[:space:]]*#[^'\"]*}"
-
-            # Split on first = only
-            if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
-                key="${BASH_REMATCH[1]}"
-                value="${BASH_REMATCH[2]}"
-
-                # Remove leading/trailing whitespace from key and value
-                key=$(echo "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-                value=$(echo "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-
-                # Remove quotes if present
-                value="${value%\"}"
-                value="${value#\"}"
-                value="${value%\'}"
-                value="${value#\'}"
-
-                # Expand environment variables in value
-                value=$(eval echo "$value")
-
-                # Set the variable
-                eval "$key=\"$value\""
-            fi
-        done < "$env_file"
-    else
-        log_error "Configuration file not found: $env_file"
-        log_error "Please create a .env file. See .env.example for reference."
-        exit 1
-    fi
-
-    # Convert colon-separated strings to arrays
-    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
-    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
-    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
-}
-
 # ============================================================================
 # SCRIPT INTERNALS (DO NOT MODIFY BELOW UNLESS YOU KNOW WHAT YOU'RE DOING)
 # ============================================================================
@@ -705,6 +657,54 @@ EXAMPLES:
     0 2 * * * /path/to/$SCRIPT_NAME --truncate-logs --truncate-size 5MB
 
 EOF
+}
+
+# Load configuration from .env file if it exists
+load_config() {
+    local script_dir=$(cd "$(dirname "$0")" && pwd)
+    local env_file="${script_dir}/.env"
+
+    if [ -f "$env_file" ]; then
+        # Source the .env file, filtering out comments and empty lines
+        while IFS= read -r line; do
+            # Skip empty lines and comments
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+            # Remove inline comments (but preserve # inside quotes)
+            line="${line%%[[:space:]]*#[^'\"]*}"
+
+            # Split on first = only
+            if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+
+                # Remove leading/trailing whitespace from key and value
+                key=$(echo "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+                value=$(echo "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+                # Remove quotes if present
+                value="${value%\"}"
+                value="${value#\"}"
+                value="${value%\'}"
+                value="${value#\'}"
+
+                # Expand environment variables in value
+                value=$(eval echo "$value")
+
+                # Set the variable
+                eval "$key=\"$value\""
+            fi
+        done < "$env_file"
+    else
+        log_error "Configuration file not found: $env_file"
+        log_error "Please create a .env file. See .env.example for reference."
+        exit 1
+    fi
+
+    # Convert colon-separated strings to arrays
+    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
+    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
+    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
 }
 
 # ============================================================================
