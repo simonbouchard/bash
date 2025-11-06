@@ -17,14 +17,14 @@
 # ============================================================================
 
 # Default configuration values
-SCAN_DIRS_STR="/path/to/scan"
+SCAN_DIRS="/path/to/scan"
 QUARANTINE_ROOT="/var/quarantine"
-FILE_EXTENSIONS_STR="sql:bak:log:tmp:old"
+FILE_EXTENSIONS="sql:bak:log:tmp:old"
 RETENTION_DAYS=30
 MIN_FILE_AGE_MINUTES=60
 TRUNCATE_LOGS=false
 TRUNCATE_SIZE="5MB"
-EXCLUDE_PATTERNS_STR="*/proc/*:*/sys/*:*/dev/*:*/tmp/*:*/.git/*:*/node_modules/*"
+EXCLUDE_PATTERNS="*/proc/*:*/sys/*:*/dev/*:*/tmp/*:*/.git/*:*/node_modules/*"
 ENABLE_EMAIL=false
 EMAIL_TO="admin@example.com"
 EMAIL_FROM="quarantine@$(hostname)"
@@ -41,16 +41,34 @@ load_config() {
 
     if [ -f "$env_file" ]; then
         # Source the .env file, filtering out comments and empty lines
-        while IFS='=' read -r key value; do
+        while IFS= read -r line; do
             # Skip empty lines and comments
-            [[ -z "$key" || "$key" =~ ^# ]] && continue
-            # Remove leading/trailing whitespace
-            key=$(echo "$key" | xargs)
-            value=$(echo "$value" | xargs)
-            # Expand environment variables in value
-            value=$(eval echo "$value")
-            # Set the variable
-            export "$key=$value"
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+            # Remove inline comments (but preserve # inside quotes)
+            line="${line%%[[:space:]]*#[^'\"]*}"
+
+            # Split on first = only
+            if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+
+                # Remove leading/trailing whitespace from key and value
+                key=$(echo "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+                value=$(echo "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+                # Remove quotes if present
+                value="${value%\"}"
+                value="${value#\"}"
+                value="${value%\'}"
+                value="${value#\'}"
+
+                # Expand environment variables in value
+                value=$(eval echo "$value")
+
+                # Set the variable
+                eval "$key=\"$value\""
+            fi
         done < "$env_file"
     else
         log_error "Configuration file not found: $env_file"
@@ -59,9 +77,9 @@ load_config() {
     fi
 
     # Convert colon-separated strings to arrays
-    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS_STR"
-    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS_STR"
-    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS_STR"
+    IFS=':' read -ra SCAN_DIRS <<< "$SCAN_DIRS"
+    IFS=':' read -ra FILE_EXTENSIONS <<< "$FILE_EXTENSIONS"
+    IFS=':' read -ra EXCLUDE_PATTERNS <<< "$EXCLUDE_PATTERNS"
 }
 
 # ============================================================================
